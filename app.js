@@ -15,6 +15,9 @@ const icons = {
  locate:'<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>',
  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+ trash:'<path d="M3 6h18M8 6V3h8v3m3 0-1 15H6L5 6m5 4v7m4-7v7"/>',
+ flag:'<path d="M5 21V4c5-4 9 4 14 0v10c-5 4-9-4-14 0"/>',
+ check:'<path d="m5 12 4 4L19 6"/>',
  copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'
 };
 const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">'+icons[name]+'</svg>';
@@ -37,22 +40,6 @@ const pad = n => String(n).padStart(2,'0');
 const code = slot => 'ABCDE'[Math.floor(slot/10)]+pad(slot%10+1);
 const displayValue = part => part.value+part.unit;
 const details = part => [part.footprint,part.tolerance,part.rating+part.ratingUnit].filter(Boolean).join(' · ');
-const demo = [
- [1,1,'C','100','nF','±10%','0603','50','V',125],[1,3,'C','10','µF','±20%','0805','25','V',65],
- [1,6,'C','22','pF','±5%','0603','50','V',48],[1,12,'C','1','µF','±10%','0603','16','V',102],
- [1,16,'C','47','µF','±20%','1210','16','V',26],[1,23,'C','220','nF','±10%','0805','50','V',82],
- [1,34,'C','4.7','µF','±10%','0805','25','V',35],[1,41,'C','10','nF','±10%','0603','50','V',58],
- [2,4,'R','10','kΩ','±1%','0603','100','mW',175],[2,7,'R','220','Ω','±1%','0603','100','mW',92],
- [2,13,'R','1','kΩ','±1%','0805','125','mW',104],[2,15,'R','4.7','kΩ','±1%','0603','100','mW',77],
- [2,24,'R','100','Ω','±1%','0805','125','mW',65],[2,31,'R','0','Ω','±1%','0603','100','mW',48],
- [3,1,'L','4.7','µH','','4 × 4 mm','2','A',41],[3,8,'L','10','µH','','5 × 5 mm','1.8','A',28],
- [3,17,'L','22','µH','','6 × 6 mm','1.5','A',20],[3,23,'L','1','µH','','3 × 3 mm','2.5','A',25],
- [4,5,'C','33','pF','±5%','0402','25','V',60],[4,11,'R','47','kΩ','±1%','0402','63','mW',35],
- [4,24,'L','100','nH','','0603','350','mA',21],[4,37,'R','1','MΩ','±1%','0603','100','mW',36]
-].map(([board,slot,type,value,unit,tolerance,footprint,rating,ratingUnit,quantity])=>{
- const spec={board,slot,type,value,unit,tolerance,footprint,rating,ratingUnit,quantity,notes:''};
- return {...spec,key:fingerprint(spec)};
-});
 const apiBase = String(window.CIRCUIT_STOCK_API || '').replace(/\/$/,'');
 let token = '';
 try { token=sessionStorage.getItem('stock-session') || ''; } catch {}
@@ -60,9 +47,9 @@ function saveToken(value) {
  token=value;
  try { if(value)sessionStorage.setItem('stock-session',value);else sessionStorage.removeItem('stock-session'); } catch {}
 }
-let user=null, parts=demo, selected=null, target=null, currentBoard=0, mode='search', filter='all', query='', formType='C', online=false;
+let user=null, parts=[], selected=null, target=null, currentBoard=0, mode='search', filter='all', query='', formType='C', online=false;
 let lastMatch='', pendingId='', pendingPayload='', submitting=false;
-let requestVersion=0, toastTimer;
+let requestVersion=0, toastTimer, detailPart=null, slotBusy=false;
 const partAt = (board,slot) => parts.find(part=>part.board===board && part.slot===slot);
 const locationMatches = (position,board,slot) => position?.board===board && position?.slot===slot;
 async function api(path, data) {
@@ -86,8 +73,10 @@ function renderHeader(){
  button.hidden=false;
  button.classList.toggle('primary',!user);
  button.innerHTML=user?avatar(user.avatar)+'<span class="name">'+safe(user.name)+'</span>':icon('lock')+'进入共享库';
- status.className='connection '+(!user?'demo':online?'':'offline');
- status.innerHTML='<i></i> '+(!user?'演示模式':online?'共享库已连接':'连接中断 · 已显示上次同步');
+ status.className='connection '+(!user?'locked':online?'':'offline');
+ $('entrance').hidden=Boolean(user);
+ $('app').hidden=!user;
+ status.innerHTML='<i></i> '+(!user?'共享库待登录':online?'共享库已连接':'连接中断 · 已显示上次同步');
 }
 function avatar(value,big=false){
  const cls='avatar'+(big?' big':'');
@@ -97,8 +86,8 @@ function avatar(value,big=false){
 }
 function renderMetrics(){
  const slots=parts.length;
- const count=parts.reduce((total,part)=>total+part.quantity,0);
- $('metrics').innerHTML=[['grid','总格位','200','格'],['box','已使用',slots,'/ 200'],['layers','在库总量',count.toLocaleString('zh-CN'),'件']]
+ const count=parts.filter(part=>part.needsRestock).length;
+ $('metrics').innerHTML=[['grid','总格位','200','格'],['box','已使用',slots,'/ 200'],['flag','待补货',count,'格']]
   .map(([glyph,label,value,unit])=>'<div class="metric"><span class="label">'+icon(glyph)+label+'</span><strong>'+value+'<small>'+unit+'</small></strong></div>').join('');
 }
 function stackMarkup(){
@@ -131,7 +120,7 @@ function stackMarkup(){
    polygon([at(0,0),at(10,0),at(10,5),at(0,5)],'fill="#a3c0db" stroke="#7599be" stroke-width="1.1" class="tray-outline"');
   for(let y=0;y<5;y++)for(let x=0;x<10;x++){
    const part=partAt(board,y*10+x);
-   const lid=part?'lid-'+part.type:'lid-empty';
+   const lid=part?.needsRestock?'lid-restock':part?'lid-'+part.type:'lid-empty';
    body+=quad(x,y,.027,0,'fill="url(#tray-rim)" stroke="#7c9fbe" stroke-width=".45"')+
     quad(x,y,.105,-3,'fill="url(#'+lid+')" stroke="#e5f3f9" stroke-width=".77"')+
     polygon([at(x+.105,y+.895,-3),at(x+.895,y+.895,-3),at(x+.895,y+.895,0),at(x+.105,y+.895,0)],'fill="#7eacae" opacity=".63"')+
@@ -154,6 +143,7 @@ function stackMarkup(){
   gradient('lid-empty',[[0,'#e3f2ef'],[.45,'#c8dede'],[1,'#a0bfc6']],'1')+
   gradient('lid-C',[[0,'#d3e9ff'],[1,'#83b2eb']],'1')+
   gradient('lid-R',[[0,'#d2f1e8'],[1,'#72bdae']],'1')+
+  gradient('lid-restock',[[0,'#ffdad8'],[1,'#d66169']],'1')+
   gradient('lid-L',[[0,'#e9e0fc'],[1,'#ad94db']],'1')+
   '<filter id="tray-shadow" x="-12%" y="-15%" width="126%" height="150%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="9" stdDeviation="5" flood-color="#345985" flood-opacity=".28"/></filter>';
  return '<div class="map-surface overview"><span class="map-hint">ISOMETRIC / 堆叠侧视</span><svg class="stack" viewBox="27 10 650 407" role="group" aria-label="四块收纳板堆叠侧视图"><defs>'+defs+'</defs><ellipse cx="306" cy="369" rx="219" ry="26" fill="#c3d6ec" opacity=".62"/>'+[4,3,2,1].map(drawTray).join('')+'</svg><span class="map-scale">5 × 10 &nbsp;·&nbsp; 50 格 / 板</span></div>';
@@ -167,8 +157,8 @@ function gridMarkup(){
   for(let c=0;c<10;c++){
    const slot=r*10+c, part=partAt(currentBoard,slot);
    const active=locationMatches(selected,currentBoard,slot)||locationMatches(target,currentBoard,slot);
-   const label=code(slot)+' · '+(part?types[part.type].name+' '+displayValue(part)+' · '+part.quantity+' 件':'空格');
-   html+='<button type="button" class="cell '+(part?part.type:'empty')+(active?' selected':'')+(!part&&placing?' candidate':'')+'" data-slot="'+slot+'" aria-pressed="'+active+'" aria-label="'+safe(label)+'" title="'+safe(label)+'"><small>'+code(slot)+'</small><b>'+safe(part?displayValue(part):'·')+'</b></button>';
+   const label=code(slot)+' · '+(part?types[part.type].name+' '+displayValue(part)+(part.needsRestock?' · 无库存，请补货':''):'空格');
+   html+='<button type="button" class="cell '+(part?part.type:'empty')+(part?.needsRestock?' restock':'')+(active?' selected':'')+(!part&&placing?' candidate':'')+'" data-slot="'+slot+'" aria-pressed="'+active+'" aria-label="'+safe(label)+'" title="'+safe(label)+'"><small>'+code(slot)+'</small><b>'+safe(part?displayValue(part):'·')+'</b></button>';
   }
  }
  return html+'</div></div>';
@@ -178,7 +168,7 @@ function renderBoard(){
  $('map-mode').innerHTML=icon(currentBoard?'grid':'layers')+(currentBoard?'板 '+pad(currentBoard)+' · 正视图':'四板 · 堆叠侧视');
  const occupied=parts.filter(p=>p.board===currentBoard).length;
  $('visual').innerHTML=currentBoard?gridMarkup():stackMarkup();
- $('board-footer').innerHTML='<div class="legend"><span><i class="dot C"></i>电容</span><span><i class="dot R"></i>电阻</span><span><i class="dot L"></i>电感</span><span><i class="dot"></i>空格</span></div><span>'+(currentBoard?'使用 '+occupied+' / 50 格':'点击任一收纳板查看格位')+'</span>';
+ $('board-footer').innerHTML='<div class="legend"><span><i class="dot C"></i>电容</span><span><i class="dot R"></i>电阻</span><span><i class="dot L"></i>电感</span><span><i class="dot restock"></i>待补货</span><span><i class="dot"></i>空格</span></div><span>'+(currentBoard?'使用 '+occupied+' / 50 格':'点击任一收纳板查看格位')+'</span>';
 }
 function focusCell(board,slot,scroll=false){
  currentBoard=board;selected={board,slot};renderBoard();
@@ -197,14 +187,14 @@ function renderResults(){
  if(!$('results'))return;
  const found=parts.filter(searchMatches);
  $('result-count').textContent=found.length+' 项';
- $('results').innerHTML=found.length?found.map(part=>'<button type="button" class="result" data-result="'+part.board+':'+part.slot+'" aria-pressed="'+locationMatches(selected,part.board,part.slot)+'"><span class="part '+part.type+'">'+part.type+'</span><span><b>'+safe(displayValue(part))+' '+types[part.type].name+'</b><small>'+safe(details(part))+' · '+part.quantity+' 件</small></span><code>'+loc(part.board,part.slot)+'</code></button>').join('')
- :'<div class="empty-state">'+icon('search')+'<strong>'+(parts.length?'未找到匹配的元器件':'共享库存为空')+'</strong><span>'+(parts.length?'试试数值、封装或格位编号。':'切换到入库，录入第一种元件。')+'</span></div>';
+ $('results').innerHTML=found.length?found.map(part=>'<button type="button" class="result'+(part.needsRestock?' restock':'')+'" data-result="'+part.board+':'+part.slot+'" aria-pressed="'+locationMatches(selected,part.board,part.slot)+'"><span class="part '+part.type+'">'+part.type+'</span><span><b>'+safe(displayValue(part))+' '+types[part.type].name+'</b><small>'+safe(details(part))+(part.needsRestock?' · <span class="restock-text">待补货</span>':'')+'</small></span><code>'+loc(part.board,part.slot)+'</code></button>').join('')
+ :'<div class="empty-state">'+icon('search')+'<strong>'+(parts.length?'未找到匹配的元器件':'共享元件库为空')+'</strong><span>'+(parts.length?'试试数值、封装或格位编号。':'切换到入库，录入第一种元件。')+'</span></div>';
 }
 function renderFilters(){
  $('filters').innerHTML=[['all','全部'],...Object.entries(types).map(([key,t])=>[key,t.name])].map(([key,label])=>'<button class="filter" type="button" data-filter="'+key+'" aria-pressed="'+(filter===key)+'">'+(key==='all'?'':'<i class="dot '+key+'"></i>')+label+'</button>').join('');
 }
 function renderSearch(){
- $('desk').innerHTML='<label for="query">搜索元器件</label><div class="search-box">'+icon('search')+'<input id="query" type="search" placeholder="搜索数值、封装或格位…" autocomplete="off"></div><div class="filters" id="filters"></div><div class="result-heading"><span>可定位的元件</span><span id="result-count"></span></div><div class="results" id="results"></div>'+(user?'':'<div class="help" style="margin-top:10px">当前显示示例数据。进入共享库可查看真实库存。</div>');
+ $('desk').innerHTML='<label for="query">搜索元器件</label><div class="search-box">'+icon('search')+'<input id="query" type="search" placeholder="搜索数值、封装或格位…" autocomplete="off"></div><div class="filters" id="filters"></div><div class="result-heading"><span>可定位的元件</span><span id="result-count"></span></div><div class="results" id="results"></div>';
  $('query').value=query;
  renderFilters();renderResults();
 }
@@ -220,7 +210,6 @@ function renderAdd(){
  (formType==='L'?'':field('tolerance','精度',{placeholder:'如 ±1%',maxlength:24}))+
  field('footprint','规格 / 封装',{placeholder:'如 0603'})+
  field('rating',t.rating,{units:t.rUnits,def:t.rDef,placeholder:formType==='C'?'如 50':'如 100',maxlength:24})+
- field('quantity','入库数量',{type:'number',placeholder:'件'})+
  field('notes','其他（选填）',{placeholder:'如 介质、型号或备注',required:false,maxlength:180})+
  '</div><div id="placement"></div><p class="error" id="deposit-error"></p><button id="submit-deposit" class="button primary full" type="submit">'+icon('plus')+'确认入库</button></form>';
  $('deposit').elements.namedItem('valueUnit').name='unit';
@@ -233,7 +222,7 @@ function getSpec(){
  for(const k of Object.keys(data))data[k]=data[k].trim();
  const {value,rating,footprint,tolerance}=data;
  if(!validNumber(value)||!validNumber(rating)||+rating<=0||(formType!=='R'&&+value<=0)||!footprint||(formType!=='L'&&!tolerance))return null;
- return {...data,tolerance:tolerance||'',quantity:+data.quantity,type:formType};
+ return {...data,tolerance:tolerance||'',type:formType};
 }
 function matching(){
  const spec=getSpec();
@@ -247,7 +236,7 @@ function updatePlacement(){
  if(match && lastMatch!==previous){target=null;focusCell(match.board,match.slot);}
  else if(previous&&!match){selected=null;renderBoard();}
  const conflict=target&&partAt(target.board,target.slot)&&!match;
- const msg=match?'发现相同规格 · <b>'+loc(match.board,match.slot)+'</b>。确认后将加入该格库存。'
+ const msg=match?'发现相同规格 · <b>'+loc(match.board,match.slot)+'</b>。确认后将登记到该格位。'
  :conflict?'该格位刚被占用，请重新选择空格。'
  :target?'已选择空格 <b>'+loc(target.board,target.slot)+'</b>。'
  :spec?'未发现相同规格。请在左侧选择任意收纳板中的空格。':'填写规格后，将自动检查重复元件。';
@@ -263,11 +252,11 @@ async function sync(){
  if(!token||!user)return;
  const generation=++requestVersion;
  try{
-  const data=await api('state');
+  const data=await api('state?slots');
   if(generation!==requestVersion)return;
   const changed=JSON.stringify(parts)!==JSON.stringify(data.parts);
   parts=data.parts;user=data.user;online=true;renderHeader();
-  if(changed){renderMetrics();renderBoard();renderResults();updatePlacement();}
+  if(changed){renderMetrics();renderBoard();renderResults();updatePlacement();refreshSlotActions();}
  }catch(e){
   if(generation!==requestVersion)return;
   if(e.status===401||e.status===403){leave();toast('访问已过期，请重新进入共享库。');}
@@ -275,19 +264,20 @@ async function sync(){
  }
 }
 function leave(){
- requestVersion++;saveToken('');user=null;parts=demo;target=null;selected=null;currentBoard=0;mode='search';lastMatch='';renderAll();
+ requestVersion++;saveToken('');user=null;parts=[];close();target=null;selected=null;currentBoard=0;mode='search';lastMatch='';renderAll();
 }
 async function enter(){
- const data=await api('state');
+ const data=await api('state?slots');
  user=data.user;parts=data.parts;online=true;target=null;selected=null;currentBoard=0;mode='search';lastMatch='';
  close();renderAll();toast('已进入共享库');
 }
 function dialog(kicker,title,body){
+ detailPart=null;
  const modal=$('dialog');
  modal.innerHTML='<div class="dialog-head"><div><div class="eyebrow accent">'+kicker+'</div><h2 id="dialog-title">'+title+'</h2></div><button type="button" data-close class="button close" aria-label="关闭">'+icon('close')+'</button></div><div class="dialog-body">'+body+'</div>';
  if(!modal.open)modal.showModal();
 }
-function close(){if($('dialog').open)$('dialog').close();}
+function close(){detailPart=null;if($('dialog').open)$('dialog').close();}
 async function profiles(){
  try{
   const data=await api('profiles');
@@ -326,16 +316,61 @@ async function upload(file){
 function account(){
  dialog('IDENTITY / 成员',safe(user.name),'<div>'+avatar(user.avatar,true)+'</div><button class="button full" type="button" data-edit-user>'+icon('user')+'编辑头像与用户名</button><button class="button full" type="button" data-members>'+icon('right')+'切换用户</button><button class="button quiet full" type="button" data-logout>退出共享库</button><p class="error" id="modal-error"></p>');
 }
+function refreshSlotActions(){
+ const actions=$('slot-actions');
+ if(!actions || !detailPart)return;
+ const {board,slot,generation}=detailPart;
+ const part=partAt(board,slot);
+ if(part?.generation!==generation){
+  actions.innerHTML='<div class="notice warn" role="status">格位已变化，请重新打开详情。</div>';
+  return;
+ }
+ const out=part.needsRestock;
+ const state=out?'<div class="restock-alert" role="status">'+icon('flag')+'<strong>无库存，请补货</strong></div>':
+  '<p class="help">发现实际元件用完时，可标记此格位提醒大家补货。</p>';
+ actions.innerHTML=state+'<div class="slot-actions"><button type="button" class="button restock-button" data-restock="true"'+(out?' disabled':'')+'>'+icon('flag')+'提醒补货</button><button type="button" class="button" data-restock="false"'+(out?'':' disabled')+'>'+icon('check')+'已经补货</button><button type="button" class="button danger" data-delete-slot>'+icon('trash')+'删除元件</button></div>';
+}
 async function history(part){
- dialog('SLOT HISTORY / 格位记录','板 '+pad(part.board)+' · '+code(part.slot),
- '<div class="notice"><b>'+safe(displayValue(part))+' '+types[part.type].name+'</b> · '+safe(details(part))+'<br>在库 '+part.quantity+' 件'+(part.notes?'<br>'+safe(part.notes):'')+'</div><div id="history-items" class="history"><p class="help">正在加载入库记录…</p></div>');
+ dialog('SLOT DETAILS / 格位详情','板 '+pad(part.board)+' · '+code(part.slot),
+ '<div class="notice"><b>'+safe(displayValue(part))+' '+types[part.type].name+'</b> · '+safe(details(part))+(part.notes?'<br>'+safe(part.notes):'')+'</div><div id="slot-actions"></div><p class="error" id="modal-error" role="alert"></p><h3 class="field-label">入库记录</h3><div id="history-items" class="history"><p class="help">正在加载入库记录…</p></div>');
+ detailPart=part;
+ refreshSlotActions();
  const container=$('history-items');
  const date=new Intl.DateTimeFormat('zh-CN',{dateStyle:'medium',timeStyle:'short'});
+ const position=new URLSearchParams({board:part.board,slot:part.slot,generation:part.generation});
  try{
-  const events=user?(await api('history?board='+part.board+'&slot='+part.slot)).events:
-   [{author:'示例成员',avatar:avatars[0],quantity:part.quantity,time:Date.UTC(2026,9,28,2,15),spec:part}];
-  container.innerHTML=events.map(e=>'<div class="event">'+avatar(e.avatar)+'<div><b>'+safe(e.author)+'</b><small>'+safe(date.format(e.time))+'</small><small>'+safe(displayValue(e.spec))+' '+types[e.spec.type].name+' · '+safe(details(e.spec))+(e.spec.notes?' · '+safe(e.spec.notes):'')+'</small></div><strong>+'+e.quantity+' 件</strong></div>').join('')||'<p class="help">该格暂时没有入库记录。</p>';
+  const {events}=await api('history?'+position);
+  container.innerHTML=events.map(e=>'<div class="event">'+avatar(e.avatar)+'<div><b>'+safe(e.author)+'</b><small>'+safe(date.format(e.time))+'</small><small>'+safe(displayValue(e.spec))+' '+types[e.spec.type].name+' · '+safe(details(e.spec))+(e.spec.notes?' · '+safe(e.spec.notes):'')+'</small></div></div>').join('')||'<p class="help">该格暂时没有入库记录。</p>';
  }catch(e){container.innerHTML='<p class="error">'+safe(e.message)+'</p>';}
+}
+function confirmDelete(part){
+ dialog('DELETE / 清空格位','确认删除元件？',
+ '<div class="restock-alert">'+icon('trash')+'<strong>板 '+loc(part.board,part.slot)+' · '+safe(displayValue(part))+' '+types[part.type].name+'</strong></div><p class="help">删除后会清除该元件的入库记录并释放这个格位，其他人也会看到空格。</p><p class="error" id="modal-error" role="alert"></p><div class="slot-actions confirm-actions"><button type="button" class="button" data-cancel-delete>取消</button><button type="button" class="button danger solid" data-confirm-delete>'+icon('trash')+'确认删除</button></div>');
+ detailPart=part;
+ $('dialog').querySelector('[data-cancel-delete]').focus();
+}
+async function changeSlot(part, deleting, needsRestock){
+ if(!part || slotBusy)return;
+ const modal=$('dialog');
+ const content=modal.firstElementChild;
+ const active=()=>modal.open && content===modal.firstElementChild;
+ const controls=Array.from(modal.querySelectorAll('.slot-actions button:not(:disabled)'));
+ controls.forEach(button=>button.disabled=true);
+ slotBusy=true;
+ const {board,slot,generation}=part;
+ try{
+  await api(deleting?'delete-slot':'restock',{board,slot,generation,...(deleting?{}:{needsRestock})});
+  if(!user)return;
+  if(deleting && active())close();
+  toast(deleting?'已清空格位 '+loc(board,slot):needsRestock?'已标记待补货':'已恢复正常状态');
+  await sync();
+ }catch(e){
+  if(e.status===409)await sync();
+  if(active() && $('modal-error'))$('modal-error').textContent=e.message;
+ }finally{
+  slotBusy=false;
+  controls.forEach(button=>button.disabled=false);
+ }
 }
 function share(){
  const url=new URL('./',location.href).href;
@@ -348,8 +383,8 @@ async function submitDeposit(){
  const spec=getSpec();
  if(!spec)return;
  const match=matching(), position=match||target;
- if(!position || !Number.isInteger(spec.quantity) || spec.quantity<1 || spec.quantity>1000000){$('deposit-error').textContent='请选择格位并输入有效的入库数量。';return;}
- const payload={...spec,board:position.board,slot:position.slot};
+ if(!position){$('deposit-error').textContent='请选择一个格位。';return;}
+ const payload={...spec,board:position.board,slot:position.slot,generation:match?.generation??null};
  const serialized=JSON.stringify(payload);
  if(serialized!==pendingPayload){pendingPayload=serialized;pendingId=crypto.randomUUID();}
  submitting=true;updatePlacement();
@@ -360,7 +395,7 @@ async function submitDeposit(){
   await sync();
   if(!user)return;
   target=null;lastMatch='';renderAdd();focusCell(position.board,position.slot,true);
-  toast('已入库 '+spec.quantity+' 件 · '+loc(position.board,position.slot));
+  toast('已登记入库 · '+loc(position.board,position.slot));
  }catch(e){
   if(e.status===409){pendingId='';pendingPayload='';await sync();}
   if($('deposit-error'))$('deposit-error').textContent=e.message;
@@ -370,6 +405,7 @@ $('share').innerHTML=icon('qr')+'<span>扫码访问</span>';
 $('share').setAttribute('aria-label','扫码访问');
 $('share').onclick=share;
 $('profile').onclick=()=>user?account():token?profiles():unlock();
+$('entrance-button').onclick=$('profile').onclick;
 document.addEventListener('click',async event=>{
  const control=event.target.closest('button, .tray');
  if(!control)return;
@@ -391,6 +427,14 @@ document.addEventListener('click',async event=>{
  if(d.filter){filter=d.filter;renderFilters();renderResults();$('filters').querySelector('[data-filter="'+filter+'"]')?.focus();return;}
  if(d.type){if(formType!==d.type){formType=d.type;selected=null;lastMatch='';renderAdd();renderBoard();$('desk').querySelector('[data-type="'+formType+'"]')?.focus();}return;}
  if(d.result||d.locate){const [board,slot]=(d.result||d.locate).split(':').map(Number);focusCell(board,slot,true);if(d.result){renderResults();$('results').querySelector('[data-result="'+d.result+'"]')?.focus({preventScroll:true});}return;}
+ if(d.restock!==undefined){await changeSlot(detailPart,false,d.restock==='true');return;}
+ if('deleteSlot' in d){if(detailPart&&!slotBusy)confirmDelete(detailPart);return;}
+ if('cancelDelete' in d){
+  const part=detailPart&&partAt(detailPart.board,detailPart.slot);
+  if(part?.generation===detailPart?.generation&&part)history(part);else close();
+  return;
+ }
+ if('confirmDelete' in d){await changeSlot(detailPart,true);return;}
  if('close' in d){close();return;}
  if('new' in d){editProfile(false);return;}
  if('members' in d){await profiles();return;}
@@ -443,7 +487,7 @@ document.addEventListener('submit',async event=>{
  }catch(e){if($('modal-error'))$('modal-error').textContent=e.message;}
  finally{button.disabled=false;}
 });
-renderAll();
+renderHeader();
 if(token)enter().catch(e=>{if(e.status===401)saveToken('');else if(e.status===403)profiles();});
 setInterval(()=>{if(document.visibilityState==='visible')sync();},5000);
 window.addEventListener('focus',sync);

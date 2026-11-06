@@ -7,10 +7,10 @@
 <meta name="description" content="Qiao group元器件仓库 · 四块收纳板的共享库存">
 <title>Qiao group元器件仓库</title>
 <link rel="icon" href="./mark.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./style.css?v=20261106-slot">
 <script src="./config.js" defer></script>
 <script src="./qr.js" defer></script>
-<script src="./app.js" defer></script>
+<script src="./app.js?v=20261106-slot" defer></script>
 </head>
 <body>
 <header class="topbar">
@@ -19,7 +19,16 @@
   <div class="top-actions"><span id="connection" class="connection"><i></i> 共享实验室</span><button type="button" id="share" class="button share"></button><button type="button" id="profile" class="button profile" hidden></button></div>
  </div>
 </header>
-<main id="app" class="shell">
+<main id="entrance" class="shell entrance" aria-labelledby="entrance-title">
+ <section class="panel entrance-card">
+  <img src="./mark.svg" alt="">
+  <h1 id="entrance-title">Qiao group元器件仓库</h1>
+  <p>输入实验室入口口令，登录后即可查询元件、登记入库和标记待补货格位。</p>
+  <button type="button" id="entrance-button" class="button primary">输入入口口令</button>
+  <div class="entrance-meta">四块收纳板 · 200 个格位 · 多设备共享</div>
+ </section>
+</main>
+<main id="app" class="shell" hidden>
  <section class="welcome">
   <div class="welcome-copy"><h1>元器件收纳库</h1><p>为每个元件找到位置，让每次入库都有记录。</p></div>
   <div class="metrics" id="metrics"></div>
@@ -32,7 +41,7 @@
    <div id="board-footer" class="board-footer"></div>
   </section>
   <aside class="panel tools-panel" aria-label="查询与入库">
-   <div class="panel-heading"><div><div class="eyebrow accent">02 &nbsp; / &nbsp; INVENTORY DESK</div><h2>库存工作台</h2></div></div>
+   <div class="panel-heading"><div><div class="eyebrow accent">02 &nbsp; / &nbsp; INVENTORY DESK</div><h2>元件工作台</h2></div></div>
    <nav id="tabs" class="mode-tabs" aria-label="库存操作"></nav>
    <div id="desk"></div>
   </aside>
