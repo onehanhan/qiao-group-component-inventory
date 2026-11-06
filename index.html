@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f0f6fc">
+<meta name="description" content="Qiao group元器件仓库 · 四块收纳板的共享库存">
+<title>Qiao group元器件仓库</title>
+<link rel="icon" href="./mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./style.css">
+<script src="./config.js" defer></script>
+<script src="./qr.js" defer></script>
+<script src="./app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+ <div class="top-inner">
+  <a class="brand" href="./"><img src="./mark.svg" alt=""><span class="brand-name"><span>Qiao group</span><span>元器件仓库</span><small>CIRCUIT STOCK</small></span></a>
+  <div class="top-actions"><span id="connection" class="connection"><i></i> 共享实验室</span><button type="button" id="share" class="button share"></button><button type="button" id="profile" class="button profile" hidden></button></div>
+ </div>
+</header>
+<main id="app" class="shell">
+ <section class="welcome">
+  <div class="welcome-copy"><h1>元器件收纳库</h1><p>为每个元件找到位置，让每次入库都有记录。</p></div>
+  <div class="metrics" id="metrics"></div>
+ </section>
+ <section class="workspace">
+  <section class="panel board-panel" aria-labelledby="board-title">
+   <div class="panel-heading"><div><div class="eyebrow accent">01 &nbsp; / &nbsp; STORAGE MAP</div><h2 id="board-title">收纳板视图</h2></div><span class="tag map-tag" id="map-mode"></span></div>
+   <nav class="boards" id="boards" aria-label="收纳板"></nav>
+   <div id="visual"></div>
+   <div id="board-footer" class="board-footer"></div>
+  </section>
+  <aside class="panel tools-panel" aria-label="查询与入库">
+   <div class="panel-heading"><div><div class="eyebrow accent">02 &nbsp; / &nbsp; INVENTORY DESK</div><h2>库存工作台</h2></div></div>
+   <nav id="tabs" class="mode-tabs" aria-label="库存操作"></nav>
+   <div id="desk"></div>
+  </aside>
+ </section>
+ <footer class="site-footer"><span><i></i> Qiao group元器件仓库 · 实验室共享库存</span><span>4 BLOCKS <b>·</b> 5 × 10 GRID <b>·</b> 200 SLOTS</span></footer>
+</main>
+<dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<noscript>请启用 JavaScript 后打开 Qiao group元器件仓库。</noscript>
+</body>
+</html>
